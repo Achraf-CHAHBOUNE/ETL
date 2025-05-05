@@ -1,6 +1,12 @@
 from airflow import DAG
 from airflow.operators.bash import BashOperator
+from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta
+import json
+from utils.logger import setup_logging
+
+# Initialize logger
+logger = setup_logging('ETL_Pipeline', log_dir='./logs/Manager')
 
 default_args = {
     'owner': 'airflow',
@@ -10,6 +16,26 @@ default_args = {
     'email_on_failure': False,
     'email_on_retry': False,
 }
+
+def check_extraction_completion():
+    last_extracted_path = '/opt/airflow/data/last_extracted.json'
+    
+    logger.info(f"Checking for last_extracted.json at {last_extracted_path}")
+    try:
+        with open(last_extracted_path, 'r') as f:
+            data = json.load(f)
+        logger.info(f"Loaded last_extracted.json: {data}")
+        for table, info in data.items():
+            if not info.get('completed', False):
+                logger.error(f"Table {table} not fully extracted")
+                raise Exception(f"Table {table} not fully extracted")
+        logger.info("All tables fully extracted")
+        print("All tables fully extracted")
+    except Exception as e:
+        logger.error(f"Extraction check failed: {str(e)}")
+        raise Exception(f"Extraction check failed: {str(e)}")
+    
+    logger.info("Extraction check completed successfully")
 
 with DAG(
     dag_id='etl_pipeline',
@@ -21,32 +47,43 @@ with DAG(
     tags=['etl'],
 ) as dag:
 
-    # Check if containers exist before running commands
     check_containers = BashOperator(
         task_id='check_containers',
-        bash_command='docker ps | grep -q etl-extractor && docker ps | grep -q etl-transformer || exit 1',
+        bash_command='docker ps | grep -q etl-extractor && docker ps | grep -q etl-transformer || { echo "Container check failed"; exit 1; } && echo "Containers etl-extractor and etl-transformer are running"',
+        do_xcom_push=True,
+        on_success_callback=lambda context: logger.info(f"check_containers succeeded: {context['task_instance'].xcom_pull(task_ids='check_containers')}"),
+        on_failure_callback=lambda context: logger.error(f"check_containers failed: {context['exception']}"),
     )
 
-    # Use BashOperator to execute commands in existing containers
     run_extractor = BashOperator(
         task_id='run_extractor',
-        bash_command='docker exec etl-extractor-1 python /app/main.py',
+        bash_command='docker exec etl-extractor-1 python /app/main.py && echo "Extractor execution completed"',
+        do_xcom_push=True,
+        on_success_callback=lambda context: logger.info(f"run_extractor succeeded: {context['task_instance'].xcom_pull(task_ids='run_extractor')}"),
+        on_failure_callback=lambda context: logger.error(f"run_extractor failed: {context['exception']}"),
     )
 
-    check_extraction = BashOperator(
+    check_extraction = PythonOperator(
         task_id='check_extraction',
-        bash_command='echo "Checking extraction..."',
+        python_callable=check_extraction_completion,
+        on_success_callback=lambda context: logger.info("check_extraction succeeded"),
+        on_failure_callback=lambda context: logger.error(f"check_extraction failed: {context['exception']}"),
     )
 
     run_transformer = BashOperator(
         task_id='run_transformer',
-        bash_command='docker exec etl-transformer-1 python /app/main.py',
+        bash_command='docker exec etl-transformer-1 python /app/main.py && echo "Transformer execution completed"',
+        do_xcom_push=True,
+        on_success_callback=lambda context: logger.info(f"run_transformer succeeded: {context['task_instance'].xcom_pull(task_ids='run_transformer')}"),
+        on_failure_callback=lambda context: logger.error(f"run_transformer failed: {context['exception']}"),
     )
 
     clear_intermediate_table = BashOperator(
         task_id='clear_intermediate_table',
-        bash_command='echo "Clearing intermediate table..."',
+        bash_command='docker exec mysql mysql -uroot -p${MYSQL_ROOT_PASSWORD} -e "SET FOREIGN_KEY_CHECKS=0; DROP DATABASE IF EXISTS 5min_transform; CREATE DATABASE 5min_transform; SET FOREIGN_KEY_CHECKS=1;" && echo "Intermediate table cleared"',
+        do_xcom_push=True,
+        on_success_callback=lambda context: logger.info(f"clear_intermediate_table succeeded: {context['task_instance'].xcom_pull(task_ids='clear_intermediate_table')}"),
+        on_failure_callback=lambda context: logger.error(f"clear_intermediate_table failed: {context['exception']}"),
     )
 
-    # Define the workflow
     check_containers >> run_extractor >> check_extraction >> run_transformer >> clear_intermediate_table
