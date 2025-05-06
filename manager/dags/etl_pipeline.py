@@ -3,6 +3,7 @@ from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta
 import json
+import os
 from utils.logger import setup_logging
 
 # Initialize logger
@@ -21,16 +22,49 @@ def check_extraction_completion():
     last_extracted_path = '/opt/airflow/data/last_extracted.json'
     
     logger.info(f"Checking for last_extracted.json at {last_extracted_path}")
+    
+    # Check if file exists
+    if not os.path.exists(last_extracted_path):
+        logger.warning(f"File {last_extracted_path} does not exist. Assuming no tables to process.")
+        print("No extraction data found. Proceeding with pipeline.")
+        return
+    
+    # Check if file is empty
+    if os.path.getsize(last_extracted_path) == 0:
+        logger.warning(f"File {last_extracted_path} is empty. Assuming no tables to process.")
+        print("Empty extraction data. Proceeding with pipeline.")
+        return
+    
     try:
         with open(last_extracted_path, 'r') as f:
+            logger.info(f"Reading contents of {last_extracted_path}")
+            content = f.read().strip()
+            if not content:
+                logger.warning(f"File {last_extracted_path} contains only whitespace. Assuming no tables to process.")
+                print("Whitespace-only extraction data. Proceeding with pipeline.")
+                return
+            logger.info(f"File contents: {content}")
+            f.seek(0)  # Reset file pointer for json.load
             data = json.load(f)
+        
         logger.info(f"Loaded last_extracted.json: {data}")
+        if not data:
+            logger.warning(f"last_extracted.json is an empty dictionary. Assuming no tables to process.")
+            print("No tables found in extraction data. Proceeding with pipeline.")
+            return
+        
+        # Check if any tables were not fully extracted
         for table, info in data.items():
             if not info.get('completed', False):
-                logger.error(f"Table {table} not fully extracted")
-                raise Exception(f"Table {table} not fully extracted")
+                logger.error(f"Table {table} not fully extracted: {info}")
+                raise ValueError(f"Table {table} not fully extracted")
+        
         logger.info("All tables fully extracted")
         print("All tables fully extracted")
+    
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse {last_extracted_path}: {str(e)}")
+        raise ValueError(f"Failed to parse {last_extracted_path}: {str(e)}")
     except Exception as e:
         logger.error(f"Extraction check failed: {str(e)}")
         raise Exception(f"Extraction check failed: {str(e)}")
@@ -80,7 +114,7 @@ with DAG(
 
     clear_intermediate_table = BashOperator(
         task_id='clear_intermediate_table',
-        bash_command='docker exec mysql mysql -uroot -p${MYSQL_ROOT_PASSWORD} -e "SET FOREIGN_KEY_CHECKS=0; DROP DATABASE IF EXISTS 5min_transform; CREATE DATABASE 5min_transform; SET FOREIGN_KEY_CHECKS=1;" && echo "Intermediate table cleared"',
+        bash_command='docker exec etl-mysql-1 mysql -uroot -p${MYSQL_ROOT_PASSWORD} -e "SET FOREIGN_KEY_CHECKS=0; DROP DATABASE IF EXISTS 5min_transform; CREATE DATABASE 5min_transform; SET FOREIGN_KEY_CHECKS=1;" && echo "Intermediate table cleared"',
         do_xcom_push=True,
         on_success_callback=lambda context: logger.info(f"clear_intermediate_table succeeded: {context['task_instance'].xcom_pull(task_ids='clear_intermediate_table')}"),
         on_failure_callback=lambda context: logger.error(f"clear_intermediate_table failed: {context['exception']}"),

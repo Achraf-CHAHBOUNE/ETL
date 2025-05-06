@@ -7,12 +7,12 @@ USER root
 # Copy entrypoint script, DAGs, and utils directories
 COPY entrypoint.sh /entrypoint.sh
 COPY dags/ /opt/airflow/dags/
-COPY utils/ /opt/airflow/utils/
+COPY utils/ /opt/airflow/dags/utils/
 
 # Make entrypoint script executable and set permissions
 RUN chmod +x /entrypoint.sh && \
     chmod -R 755 /opt/airflow/dags && \
-    chmod -R 755 /opt/airflow/utils
+    chmod -R 755 /opt/airflow/dags/utils
 
 # Install Docker CLI
 RUN apt-get update && \
@@ -22,7 +22,7 @@ RUN apt-get update && \
 
 # Debug: List DAGs and utils directory contents
 RUN ls -l /opt/airflow/dags && \
-    ls -l /opt/airflow/utils
+    ls -l /opt/airflow/dags/utils
 
 # Switch back to airflow user for runtime
 USER airflow
