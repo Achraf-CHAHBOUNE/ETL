@@ -18,8 +18,7 @@ DEST_MYSQL_HOST: str = os.getenv("DEST_MYSQL_HOST")
 DEST_MYSQL_USER: str = os.getenv("DEST_MYSQL_USER")
 DEST_MYSQL_PASSWORD: str = os.getenv("DEST_MYSQL_PASSWORD")
 DEST_MYSQL_PORT: int = int(os.getenv("DEST_MYSQL_PORT", 3306))
-DEST_MYSQL_DB: str = "5min_transform"
-# DEST_MYSQL_DB: str = os.getenv("DEST_MYSQL_DB")
+DEST_MYSQL_DB: str = os.getenv("DEST_MYSQL_DB")
 
 # Source Configuration
 SOURCE_CONFIG = {

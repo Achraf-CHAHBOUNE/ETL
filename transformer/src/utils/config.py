@@ -16,12 +16,10 @@ SOURCE_DB_PORT = 3306
 DEST_DB_HOST = os.getenv("DEST_MYSQL_HOST")
 DEST_DB_USER = os.getenv("DEST_MYSQL_USER")
 DEST_DB_PASSWORD = os.getenv("DEST_MYSQL_PASSWORD")
-DEST_DB_PORT = 3306
-# DEST_DB_PORT = int(os.getenv("DEST_MYSQL_PORT", default=3306))
-
-DEST_DB_NAME_5MIN = "5min_today"
-DEST_DB_NAME_15MIN = "15min_today"
-DEST_DB_NAME_MGW = "mgw_today"
+DEST_DB_PORT = int(os.getenv("DEST_MYSQL_PORT", default=3306))
+DEST_DB_NAME_5MIN = os.getenv("DEST_MYSQL_DB_5MIN")
+DEST_DB_NAME_15MIN = os.getenv("DEST_MYSQL_DB_15MIN")
+DEST_DB_NAME_MGW = os.getenv("DEST_MYSQL_DB_MGW")
 
 # Source Database config
 SOURCE_DB_CONFIG = {
